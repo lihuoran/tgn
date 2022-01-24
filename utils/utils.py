@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import numpy as np
 import torch
@@ -7,6 +7,9 @@ from .data_processing import Data
 
 
 class MergeLayer(torch.nn.Module):
+    def _forward_unimplemented(self, *input: Any) -> None:
+        pass
+
     def __init__(self, dim1, dim2, dim3, dim4):
         super().__init__()
         self.fc1 = torch.nn.Linear(dim1 + dim2, dim3)
@@ -23,6 +26,9 @@ class MergeLayer(torch.nn.Module):
 
 
 class MLP(torch.nn.Module):
+    def _forward_unimplemented(self, *input: Any) -> None:
+        pass
+
     def __init__(self, dim, drop=0.3):
         super().__init__()
         self.fc_1 = torch.nn.Linear(dim, 80)
@@ -40,7 +46,7 @@ class MLP(torch.nn.Module):
 
 
 class EarlyStopMonitor(object):
-    def __init__(self, max_round=3, higher_better=True, tolerance=1e-10):
+    def __init__(self, max_round: int = 3, higher_better: bool = True, tolerance: float = 1e-10) -> None:
         self.max_round = max_round
         self.num_round = 0
 
@@ -51,11 +57,12 @@ class EarlyStopMonitor(object):
         self.higher_better = higher_better
         self.tolerance = tolerance
 
-    def early_stop_check(self, curr_val):
+    def early_stop_check(self, curr_val: float) -> bool:
         if not self.higher_better:
             curr_val *= -1
         if self.last_best is None:
             self.last_best = curr_val
+
         elif (curr_val - self.last_best) / np.abs(self.last_best) > self.tolerance:
             self.last_best = curr_val
             self.num_round = 0
@@ -76,7 +83,7 @@ class RandEdgeSampler(object):
 
         if seed is not None:
             self._seed = seed
-            self._random_state = np.random.RandomState(self._seed)
+            self.reset_random_state()
 
     def sample(self, size: int) -> Tuple[np.ndarray, np.ndarray]:
         if self._seed is None:
@@ -100,7 +107,7 @@ class NeighborFinder:
         for neighbors in adj_list:
             # Neighbors is a list of tuples (neighbor, edge_idx, timestamp)
             # We sort the list based on timestamp
-            sorted_neighbors = sorted(neighbors, key=lambda x: x[2])
+            sorted_neighbors = sorted(neighbors, key=lambda x: x[2])  # Sort by timestamp, ascending
             self.node_to_neighbors.append(np.array([x[0] for x in sorted_neighbors]))
             self.node_to_edge_idxes.append(np.array([x[1] for x in sorted_neighbors]))
             self.node_to_edge_timestamps.append(np.array([x[2] for x in sorted_neighbors]))
@@ -125,7 +132,7 @@ class NeighborFinder:
             self.node_to_edge_idxes[src_idx][:i], \
             self.node_to_edge_timestamps[src_idx][:i]
 
-    def get_temporal_neighbor(self, source_nodes: List[int], timestamps: List[float], n_neighbors: int = 20) -> tuple:
+    def get_temporal_neighbor(self, src_ids: List[int], timestamps: List[float], n_neighbors: int = 20) -> tuple:
         """
         Given a list of users ids and relative cut times, extracts a sampled temporal neighborhood of each user
         in the list.
@@ -136,7 +143,7 @@ class NeighborFinder:
         cut_time_l: List[float],
         num_neighbors: int
         """
-        assert (len(source_nodes) == len(timestamps))
+        assert (len(src_ids) == len(timestamps))
 
         tmp_n_neighbors = n_neighbors if n_neighbors > 0 else 1
 
@@ -144,17 +151,17 @@ class NeighborFinder:
 
         # each entry in position (i,j) represent the id of the item targeted by user src_idx_l[i] with an
         # interaction happening before cut_time_l[i]
-        neighbors = np.zeros((len(source_nodes), tmp_n_neighbors)).astype(np.int32)
+        neighbors = np.zeros((len(src_ids), tmp_n_neighbors)).astype(np.int32)
 
         # each entry in position (i,j) represent the timestamp of an interaction between user src_idx_l[i] and
         # item neighbors[i,j] happening before cut_time_l[i]
-        edge_times = np.zeros((len(source_nodes), tmp_n_neighbors)).astype(np.float32)
+        edge_times = np.zeros((len(src_ids), tmp_n_neighbors)).astype(np.float32)
 
         # each entry in position (i,j) represent the interaction index of an interaction between user src_idx_l[i]
         # and item neighbors[i,j] happening before cut_time_l[i]
-        edge_idxes = np.zeros((len(source_nodes), tmp_n_neighbors)).astype(np.int32)
+        edge_idxes = np.zeros((len(src_ids), tmp_n_neighbors)).astype(np.int32)
 
-        for i, (source_node, timestamp) in enumerate(zip(source_nodes, timestamps)):
+        for i, (source_node, timestamp) in enumerate(zip(src_ids, timestamps)):
             # extracts all neighbors, interactions indexes and timestamps of all interactions of user source_node
             # happening before cut_time
             source_neighbors, source_edge_idxes, source_edge_times = self.find_before(source_node, timestamp)
@@ -162,7 +169,6 @@ class NeighborFinder:
             if len(source_neighbors) > 0 and n_neighbors > 0:
                 if self.uniform:  # if we are applying uniform sampling, shuffles the data above before sampling
                     sampled_idx = np.random.randint(0, len(source_neighbors), n_neighbors)
-
                     neighbors[i, :] = source_neighbors[sampled_idx]
                     edge_times[i, :] = source_edge_times[sampled_idx]
                     edge_idxes[i, :] = source_edge_idxes[sampled_idx]
@@ -190,12 +196,12 @@ class NeighborFinder:
 
 
 def get_neighbor_finder(data: Data, uniform: bool, max_node_idx: int = None) -> NeighborFinder:
-    max_node_idx = max(data.src_ids.max(), data.dst_ids.max()) if max_node_idx is None else max_node_idx
+    max_node_idx = max(np.max(data.src_ids), np.max(data.dst_ids)) if max_node_idx is None else max_node_idx
     adj_list = [[] for _ in range(max_node_idx + 1)]
 
     data_iter = zip(data.src_ids, data.dst_ids, data.edge_idxes, data.timestamps)
-    for src, dst, edge_idx, timestamp in data_iter:
-        adj_list[int(src)].append((dst, edge_idx, timestamp))
-        adj_list[int(dst)].append((src, edge_idx, timestamp))
+    for src_id, dst_id, edge_idx, timestamp in data_iter:
+        adj_list[int(src_id)].append((dst_id, edge_idx, timestamp))
+        adj_list[int(dst_id)].append((src_id, edge_idx, timestamp))
 
     return NeighborFinder(adj_list, uniform=uniform)

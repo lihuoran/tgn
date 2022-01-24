@@ -1,8 +1,13 @@
+from typing import Any
+
 import numpy as np
 import torch
 
 
 class TimeEncode(torch.nn.Module):
+    def _forward_unimplemented(self, *input: Any) -> None:
+        pass
+
     # Time Encoding proposed by TGAT
     def __init__(self, dimension):
         super(TimeEncode, self).__init__()
