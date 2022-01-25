@@ -10,16 +10,16 @@ class MergeLayer(torch.nn.Module):
     def _forward_unimplemented(self, *input: Any) -> None:
         pass
 
-    def __init__(self, dim1, dim2, dim3, dim4):
+    def __init__(self, dim1: int, dim2: int, dim3: int, dim4: int) -> None:
         super().__init__()
         self.fc1 = torch.nn.Linear(dim1 + dim2, dim3)
-        self.fc2 = torch.nn.Linear(dim3, dim4)
         self.act = torch.nn.ReLU()
+        self.fc2 = torch.nn.Linear(dim3, dim4)
 
         torch.nn.init.xavier_normal_(self.fc1.weight)
         torch.nn.init.xavier_normal_(self.fc2.weight)
 
-    def forward(self, x1, x2):
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
         x = torch.cat([x1, x2], dim=1)
         h = self.act(self.fc1(x))
         return self.fc2(h)
@@ -29,7 +29,7 @@ class MLP(torch.nn.Module):
     def _forward_unimplemented(self, *input: Any) -> None:
         pass
 
-    def __init__(self, dim, drop=0.3):
+    def __init__(self, dim: int, drop: float = 0.3) -> None:
         super().__init__()
         self.fc_1 = torch.nn.Linear(dim, 80)
         self.fc_2 = torch.nn.Linear(80, 10)
@@ -37,7 +37,7 @@ class MLP(torch.nn.Module):
         self.act = torch.nn.ReLU()
         self.dropout = torch.nn.Dropout(p=drop, inplace=False)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.act(self.fc_1(x))
         x = self.dropout(x)
         x = self.act(self.fc_2(x))
@@ -76,6 +76,9 @@ class EarlyStopMonitor(object):
 
 
 class RandEdgeSampler(object):
+    """
+    Randomly sample edges (user-item pairs) in the given bipartite graph
+    """
     def __init__(self, src_id_list: np.ndarray, dst_id_list: np.ndarray, seed: int = None) -> None:
         self._seed = None
         self._src_id_list = np.unique(src_id_list)
@@ -83,7 +86,7 @@ class RandEdgeSampler(object):
 
         if seed is not None:
             self._seed = seed
-            self.reset_random_state()
+            self._random_state = np.random.RandomState(self._seed)
 
     def sample(self, size: int) -> Tuple[np.ndarray, np.ndarray]:
         if self._seed is None:

@@ -20,8 +20,7 @@ np.random.seed(0)
 
 def make_parser():
     parser = argparse.ArgumentParser('TGN self-supervised training')
-    parser.add_argument('-d', '--data', type=str, help='Dataset name (eg. wikipedia or reddit)',
-                        default='wikipedia')
+    parser.add_argument('-d', '--data', type=str, help='Dataset name (eg. wikipedia or reddit)', default='wikipedia')
     parser.add_argument('--bs', type=int, default=200, help='Batch_size')
     parser.add_argument('--prefix', type=str, default='', help='Prefix to name the checkpoints')
     parser.add_argument('--n_degree', type=int, default=10, help='Number of neighbors to sample')
@@ -35,35 +34,39 @@ def make_parser():
     parser.add_argument('--gpu', type=int, default=0, help='Idx for the gpu to use')
     parser.add_argument('--node_dim', type=int, default=100, help='Dimensions of the node embedding')
     parser.add_argument('--time_dim', type=int, default=100, help='Dimensions of the time embedding')
-    parser.add_argument('--backprop_every', type=int, default=1, help='Every how many batches to '
-                                                                      'backprop')
-    parser.add_argument('--use_memory', action='store_true',
-                        help='Whether to augment the model with a node memory')
-    parser.add_argument('--embedding_module', type=str, default="graph_attention", choices=[
-        "graph_attention", "graph_sum", "identity", "time"], help='Type of embedding module')
-    parser.add_argument('--message_function', type=str, default="identity", choices=[
-        "mlp", "identity"], help='Type of message function')
-    parser.add_argument('--memory_updater', type=str, default="gru", choices=[
-        "gru", "rnn"], help='Type of memory updater')
-    parser.add_argument('--aggregator', type=str, default="last", help='Type of message '
-                                                                       'aggregator')
-    parser.add_argument('--memory_update_at_end', action='store_true',
-                        help='Whether to update memory at the end or at the start of the batch')
+    parser.add_argument('--backprop_every', type=int, default=1, help='Every how many batches to backprop')
+    parser.add_argument('--use_memory', action='store_true', help='Whether to augment the model with a node memory')
+    parser.add_argument(
+        '--embedding_module', type=str, default="graph_attention",
+        choices=["graph_attention", "graph_sum", "identity", "time"], help='Type of embedding module'
+    )
+    parser.add_argument(
+        '--message_function', type=str, default="identity", choices=["mlp", "identity"],
+        help='Type of message function'
+    )
+    parser.add_argument(
+        '--memory_updater', type=str, default="gru", choices=["gru", "rnn"], help='Type of memory updater'
+    )
+    parser.add_argument('--aggregator', type=str, default="last", help='Type of message aggregator')
+    parser.add_argument(
+        '--memory_update_at_end', action='store_true',
+        help='Whether to update memory at the end or at the start of the batch'
+    )
     parser.add_argument('--message_dim', type=int, default=100, help='Dimensions of the messages')
-    parser.add_argument('--memory_dim', type=int, default=172, help='Dimensions of the memory for '
-                                                                    'each user')
-    parser.add_argument('--different_new_nodes', action='store_true',
-                        help='Whether to use disjoint set of new nodes for train and val')
-    parser.add_argument('--uniform', action='store_true',
-                        help='take uniform sampling from temporal neighbors')
-    parser.add_argument('--randomize_features', action='store_true',
-                        help='Whether to randomize node features')
-    parser.add_argument('--use_destination_embedding_in_message', action='store_true',
-                        help='Whether to use the embedding of the destination node as part of the message')
-    parser.add_argument('--use_source_embedding_in_message', action='store_true',
-                        help='Whether to use the embedding of the source node as part of the message')
-    parser.add_argument('--dyrep', action='store_true',
-                        help='Whether to run the dyrep model')
+    parser.add_argument('--memory_dim', type=int, default=172, help='Dimensions of the memory for each user')
+    parser.add_argument(
+        '--different_new_nodes', action='store_true', help='Whether to use disjoint set of new nodes for train and val')
+    parser.add_argument('--uniform', action='store_true', help='take uniform sampling from temporal neighbors')
+    parser.add_argument('--randomize_features', action='store_true', help='Whether to randomize node features')
+    parser.add_argument(
+        '--use_destination_embedding_in_message', action='store_true',
+        help='Whether to use the embedding of the destination node as part of the message'
+    )
+    parser.add_argument(
+        '--use_source_embedding_in_message', action='store_true',
+        help='Whether to use the embedding of the source node as part of the message'
+    )
+    parser.add_argument('--dyrep', action='store_true', help='Whether to run the dyrep model')
 
     try:
         return parser.parse_args()
@@ -96,7 +99,11 @@ args = make_parser()
 Path("./saved_models/").mkdir(parents=True, exist_ok=True)
 Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
 model_save_path = f'./saved_models/{args.prefix}-{args.data}.pth'
-get_checkpoint_path = lambda _epoch: f'./saved_checkpoints/{args.prefix}-{args.data}-{_epoch}.pth'
+
+
+def get_checkpoint_path(epoch: int) -> str:
+    return f'./saved_checkpoints/{args.prefix}-{args.data}-{epoch}.pth'
+
 
 # set up logger
 logger = make_logger()
@@ -205,7 +212,7 @@ for i in range(args.n_runs):
                 timestamps_batch = train_data.timestamps[start_idx:end_idx]
 
                 size = end_idx - start_idx
-                _, negatives_batch = train_rand_sampler.sample(size)
+                _, neg_batch = train_rand_sampler.sample(size)
 
                 with torch.no_grad():
                     pos_label = torch.ones(size, dtype=torch.float, device=device)
@@ -213,7 +220,7 @@ for i in range(args.n_runs):
 
                 tgn = tgn.train()
                 pos_prob, neg_prob = tgn.compute_edge_probabilities(
-                    src_batch, dst_batch, negatives_batch, timestamps_batch, edge_idxes_batch, args.n_degree
+                    src_batch, dst_batch, neg_batch, timestamps_batch, edge_idxes_batch, args.n_degree
                 )
 
                 loss += criterion(pos_prob.squeeze(), pos_label) + criterion(neg_prob.squeeze(), neg_label)
