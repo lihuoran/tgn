@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from typing import Any, List
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -11,7 +11,7 @@ from modules.memory import Memory
 from modules.memory_updater import get_memory_updater
 from modules.message_aggregator import get_message_aggregator
 from modules.message_function import get_message_function
-from utils.utils import MergeLayer, NeighborFinder
+from utils.utils import MergeLayer, Message, NeighborFinder
 
 
 class TGN(torch.nn.Module):
@@ -48,8 +48,8 @@ class TGN(torch.nn.Module):
         self.embedding_dimension = self.n_node_features
         self.n_neighbors = n_neighbors
         self.embedding_module_type = embedding_module_type
-        self.use_destination_embedding_in_message = use_destination_embedding_in_message
-        self.use_source_embedding_in_message = use_source_embedding_in_message
+        self.use_dst_emb_in_message = use_destination_embedding_in_message
+        self.use_src_emb_in_message = use_source_embedding_in_message
         self.dyrep = dyrep
 
         self.use_memory = use_memory
@@ -73,16 +73,16 @@ class TGN(torch.nn.Module):
                 message_dimension=message_dimension,
                 device=device
             )
-            self.message_aggregator = get_message_aggregator(
+            self._message_aggregator = get_message_aggregator(
                 aggregator_type=aggregator_type,
                 device=device
             )
-            self.message_function = get_message_function(
+            self._message_function = get_message_function(
                 module_type=message_function,
                 raw_message_dimension=raw_message_dimension,
                 message_dimension=message_dimension
             )
-            self.memory_updater = get_memory_updater(
+            self._memory_updater = get_memory_updater(
                 module_type=memory_updater_type,
                 memory=self.memory,
                 message_dimension=message_dimension,
@@ -174,7 +174,7 @@ class TGN(torch.nn.Module):
             if self.memory_update_at_start:
                 # Persist the updates to the memory only for sources and destinations (since now we have
                 # new messages for them)
-                self.update_memory(positives, self.memory.messages)
+                self._update_memory(positives, self.memory.messages)
 
                 assert torch.allclose(memory[positives], self.memory.get_memory(positives), atol=1e-5), \
                     "Something wrong in how the memory was updated"
@@ -182,27 +182,20 @@ class TGN(torch.nn.Module):
                 # Remove messages for the positives since we have already updated the memory using them
                 self.memory.clear_messages(positives)
 
-            unique_sources, source_id_to_messages = self.get_raw_messages(
-                src_ids, src_emb,
-                dst_ids,
-                dst_emb,
-                edge_times, edge_idxes
+            uniq_src_ids, src_id_to_messages = self._get_raw_messages(
+                src_ids, src_emb, dst_ids, dst_emb, edge_times, edge_idxes
             )
-            unique_destinations, destination_id_to_messages = self.get_raw_messages(
-                dst_ids,
-                dst_emb,
-                src_ids,
-                src_emb,
-                edge_times, edge_idxes
+            uniq_dst_ids, dst_id_to_messages = self._get_raw_messages(
+                dst_ids, dst_emb, src_ids, src_emb, edge_times, edge_idxes
             )
             if self.memory_update_at_start:
-                self.memory.store_raw_messages(unique_sources, source_id_to_messages)
-                self.memory.store_raw_messages(unique_destinations, destination_id_to_messages)
+                self.memory.store_raw_messages(uniq_src_ids, src_id_to_messages)
+                self.memory.store_raw_messages(uniq_dst_ids, dst_id_to_messages)
             else:
-                self.update_memory(unique_sources, source_id_to_messages)
-                self.update_memory(unique_destinations, destination_id_to_messages)
+                self._update_memory(uniq_src_ids, src_id_to_messages)
+                self._update_memory(uniq_dst_ids, dst_id_to_messages)
 
-            if self.dyrep:
+            if self.dyrep:  # TODO: ?
                 src_emb = memory[src_ids]
                 dst_emb = memory[dst_ids]
                 neg_emb = memory[neg_ids]
@@ -214,7 +207,7 @@ class TGN(torch.nn.Module):
         src_ids: np.ndarray, dst_ids: np.ndarray,
         neg_ids: np.ndarray, edge_times: np.ndarray, edge_idxes: np.ndarray,
         n_neighbors: int = 20,
-    ):
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Compute probabilities for edges between sources and destination and between sources and
         # negatives by first computing temporal embeddings using the TGN encoder and then feeding them
         # into the MLP decoder.
@@ -239,54 +232,49 @@ class TGN(torch.nn.Module):
 
         return pos_score.sigmoid(), neg_score.sigmoid()
 
-    def update_memory(self, nodes, messages):
+    def _update_memory(self, nodes: np.ndarray, messages: dict) -> None:
         # Aggregate messages for the same nodes
-        unique_nodes, unique_messages, unique_timestamps = \
-            self.message_aggregator.aggregate(
-                nodes,
-                messages)
+        unique_nodes, unique_messages, unique_timestamps = self._message_aggregator.aggregate(nodes, messages)
 
         if len(unique_nodes) > 0:
-            unique_messages = self.message_function.compute_message(unique_messages)
+            unique_messages = self._message_function.compute_message(unique_messages)
 
         # Update the memory with the aggregated messages
-        self.memory_updater.update_memory(unique_nodes, unique_messages, timestamps=unique_timestamps)
+        self._memory_updater.update_memory(unique_nodes, unique_messages, timestamps=unique_timestamps)
 
-    def get_updated_memory(self, nodes: List[int], messages: dict) -> tuple:
+    def get_updated_memory(self, nodes: List[int], messages: dict) -> Tuple[torch.Tensor, torch.Tensor]:
         # Aggregate messages for the same nodes
-        unique_nodes, unique_messages, unique_timestamps = self.message_aggregator.aggregate(nodes, messages)
+        unique_nodes, unique_messages, unique_timestamps = self._message_aggregator.aggregate(nodes, messages)
 
         if len(unique_nodes) > 0:
-            unique_messages = self.message_function.compute_message(unique_messages)
+            unique_messages = self._message_function.compute_message(unique_messages)
 
-        updated_memory, updated_last_update = self.memory_updater.get_updated_memory(
+        updated_memory, updated_last_update = self._memory_updater.get_updated_memory(
             unique_nodes, unique_messages, timestamps=unique_timestamps
         )
 
         return updated_memory, updated_last_update
 
-    def get_raw_messages(
+    def _get_raw_messages(
         self,
         src_ids: np.ndarray, src_emb: torch.Tensor,
         dst_ids: np.ndarray, dst_emb: torch.Tensor,
         edge_times: np.ndarray, edge_idxes: np.ndarray
-    ):
+    ) -> Tuple[np.ndarray, Dict[int, List[Message]]]:
         edge_times = torch.from_numpy(edge_times).float().to(self.device)
         edge_features = self.edge_raw_features[edge_idxes]
 
-        source_memory = self.memory.get_memory(src_ids) if not \
-            self.use_source_embedding_in_message else src_emb
-        destination_memory = self.memory.get_memory(dst_ids) if \
-            not self.use_destination_embedding_in_message else dst_emb
+        src_memory = self.memory.get_memory(src_ids) if not self.use_src_emb_in_message else src_emb
+        dst_memory = self.memory.get_memory(dst_ids) if not self.use_dst_emb_in_message else dst_emb
 
         source_time_delta = edge_times - self.memory.last_update[src_ids]
         source_time_delta_encoding = self.time_encoder(source_time_delta.unsqueeze(dim=1)).view(len(src_ids), -1)
 
         source_message = torch.cat(
-            [source_memory, destination_memory, edge_features, source_time_delta_encoding],
+            [src_memory, dst_memory, edge_features, source_time_delta_encoding],
             dim=1
         )
-        messages = defaultdict(list)
+        messages: Dict[int, List[Message]] = defaultdict(list)
         unique_sources = np.unique(src_ids)
 
         for i in range(len(src_ids)):

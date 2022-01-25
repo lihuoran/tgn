@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Any, List
+from typing import Any, List, Optional, Tuple
 
 from torch import nn
 import torch
@@ -20,6 +20,15 @@ class MemoryUpdater(nn.Module):
     ) -> None:
         raise NotImplementedError
 
+    @abstractmethod
+    def get_updated_memory(
+        self,
+        unique_node_ids: List[int],
+        unique_messages: torch.Tensor,
+        timestamps: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
+
 
 class SequenceMemoryUpdater(MemoryUpdater):
     def __init__(self, memory: Memory, message_dimension: int, memory_dimension: int, device: torch.device) -> None:
@@ -28,6 +37,8 @@ class SequenceMemoryUpdater(MemoryUpdater):
         self.layer_norm = torch.nn.LayerNorm(memory_dimension)
         self.message_dimension = message_dimension
         self.device = device
+
+        self.memory_updater: Optional[nn.Module] = None
 
     def update_memory(
         self,
@@ -53,7 +64,7 @@ class SequenceMemoryUpdater(MemoryUpdater):
         unique_node_ids: List[int],
         unique_messages: torch.Tensor,
         timestamps: torch.Tensor
-    ) -> tuple:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         if len(unique_node_ids) <= 0:
             return self.memory.memory.data.clone(), self.memory.last_update.data.clone()
 

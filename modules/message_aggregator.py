@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Any, List
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 import torch
@@ -12,6 +12,7 @@ import torch
 #         node_id_to_messages[node_id].append((messages[i], timestamps[i]))
 #
 #     return node_id_to_messages
+from utils.utils import Message
 
 
 class MessageAggregator(torch.nn.Module):
@@ -28,7 +29,11 @@ class MessageAggregator(torch.nn.Module):
         self.device = device
 
     @abstractmethod
-    def aggregate(self, node_ids: List[int], messages: dict) -> tuple:
+    def aggregate(
+        self,
+        node_ids: Union[List[int], np.ndarray],
+        messages: Dict[int, List[Message]]
+    ) -> Tuple[List[int], torch.Tensor, torch.Tensor]:
         """
         Given a list of node ids, and a list of messages of the same length, aggregate different
         messages for the same id using one of the possible strategies.
@@ -43,7 +48,11 @@ class LastMessageAggregator(MessageAggregator):
     def __init__(self, device: torch.device) -> None:
         super(LastMessageAggregator, self).__init__(device)
 
-    def aggregate(self, node_ids: List[int], messages: dict) -> tuple:
+    def aggregate(
+        self,
+        node_ids: Union[List[int], np.ndarray],
+        messages: Dict[int, List[Message]]
+    ) -> Tuple[List[int], torch.Tensor, torch.Tensor]:
         """Only keep the last message for each node"""
         unique_node_ids = np.unique(node_ids)
         unique_messages = []
@@ -67,7 +76,11 @@ class MeanMessageAggregator(MessageAggregator):
     def __init__(self, device: torch.device) -> None:
         super(MeanMessageAggregator, self).__init__(device)
 
-    def aggregate(self, node_ids: List[int], messages: dict) -> tuple:
+    def aggregate(
+        self,
+        node_ids: Union[List[int], np.ndarray],
+        messages: Dict[int, List[Message]]
+    ) -> Tuple[List[int], torch.Tensor, torch.Tensor]:
         """Only keep the last message for each node"""
         unique_node_ids = np.unique(node_ids)
         unique_messages = []

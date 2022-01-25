@@ -177,7 +177,7 @@ def get_data(
         f"The new node test dataset has {new_node_test_data.n_interactions} interactions, "
         f"involving {new_node_test_data.n_unique_nodes} different nodes")
     print(
-        "f{len(new_test_node_set)} nodes were used for the inductive testing, i.e. are never seen during training"
+        f"{len(new_test_node_set)} nodes were used for the inductive testing, i.e. are never seen during training"
     )
 
     return (
@@ -187,7 +187,9 @@ def get_data(
     )
 
 
-def compute_time_statistics(src_ids: np.ndarray, dst_ids: np.ndarray, timestamps: np.ndarray) -> tuple:
+def compute_time_statistics(
+    src_ids: np.ndarray, dst_ids: np.ndarray, timestamps: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     last_ts_src = dict()
     last_ts_dst = dict()
     all_time_diffs_src = []

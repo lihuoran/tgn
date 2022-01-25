@@ -6,6 +6,9 @@ import torch
 from .data_processing import Data
 
 
+Message = Tuple[torch.Tensor, torch.Tensor]
+
+
 class MergeLayer(torch.nn.Module):
     def _forward_unimplemented(self, *input: Any) -> None:
         pass
@@ -121,7 +124,7 @@ class NeighborFinder:
             self.seed = seed
             self.random_state = np.random.RandomState(self.seed)
 
-    def find_before(self, src_idx: int, cut_time: float) -> tuple:
+    def find_before(self, src_idx: int, cut_time: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Extracts all the interactions happening before cut_time for user src_idx in the overall interaction graph.
         The returned interactions are sorted by time.
@@ -135,7 +138,9 @@ class NeighborFinder:
             self.node_to_edge_idxes[src_idx][:i], \
             self.node_to_edge_timestamps[src_idx][:i]
 
-    def get_temporal_neighbor(self, src_ids: List[int], timestamps: List[float], n_neighbors: int = 20) -> tuple:
+    def get_temporal_neighbor(
+        self, src_ids: List[int], timestamps: List[float], n_neighbors: int = 20
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Given a list of users ids and relative cut times, extracts a sampled temporal neighborhood of each user
         in the list.
