@@ -26,8 +26,8 @@ class TGN(torch.nn.Module):
         n_layers: int = 2, n_heads: int = 2, dropout: float = 0.1, use_memory: bool = False,
         memory_update_at_start: bool = True, message_dimension: int = 100, memory_dimension: int = 500,
         embedding_module_type: str = "graph_attention", message_function: str = "mlp",
-        mean_time_shift_src: int = 0, std_time_shift_src: int = 1,
-        mean_time_shift_dst: int = 0, std_time_shift_dst: int = 1,
+        mean_time_shift_src: float = 0.0, std_time_shift_src: float = 1.0,
+        mean_time_shift_dst: float = 0.0, std_time_shift_dst: float = 1.0,
         n_neighbors: int = None, aggregator_type: str = "last", memory_updater_type: str = "gru",
         use_destination_embedding_in_message: bool = False, use_source_embedding_in_message: bool = False,
         dyrep: bool = False,
@@ -53,7 +53,7 @@ class TGN(torch.nn.Module):
         self.dyrep = dyrep
 
         self.use_memory = use_memory
-        self.time_encoder = TimeEncode(dimension=self.n_node_features)  # TODO: dive into TimeEncode
+        self._time_encoder = TimeEncode(dimension=self.n_node_features)  # TODO: dive into TimeEncode
         self.memory = None
 
         self.mean_time_shift_src = mean_time_shift_src
@@ -64,7 +64,7 @@ class TGN(torch.nn.Module):
         if self.use_memory:
             self.memory_dimension = memory_dimension
             self.memory_update_at_start = memory_update_at_start
-            raw_message_dimension = 2 * self.memory_dimension + self.n_edge_features + self.time_encoder.dimension
+            raw_message_dimension = 2 * self.memory_dimension + self.n_edge_features + self._time_encoder.dimension
             message_dimension = message_dimension if message_function != "identity" else raw_message_dimension
             self.memory = Memory(
                 n_nodes=self.n_nodes,
@@ -98,7 +98,7 @@ class TGN(torch.nn.Module):
             edge_features=self.edge_raw_features,
             memory=self.memory,
             neighbor_finder=self.neighbor_finder,
-            time_encoder=self.time_encoder,
+            time_encoder=self._time_encoder,
             n_layers=self.n_layers,
             n_node_features=self.n_node_features,
             n_edge_features=self.n_edge_features,
@@ -119,17 +119,6 @@ class TGN(torch.nn.Module):
         neg_ids: np.ndarray, edge_times: np.ndarray, edge_idxes: np.ndarray,
         n_neighbors: int = 20,
     ):
-        # Compute temporal embeddings for sources, destinations, and negatively sampled destinations.
-        #
-        # source_nodes [batch_size]: source ids.
-        # :param destination_nodes [batch_size]: destination ids
-        # :param negative_nodes [batch_size]: ids of negative sampled destination
-        # :param edge_times [batch_size]: timestamp of interaction
-        # :param edge_idxes [batch_size]: index of interaction
-        # :param n_neighbors [scalar]: number of temporal neighbor to consider in each convolutional
-        # layer
-        # :return: Temporal embeddings for sources, destinations and negatives
-
         n_samples = len(src_ids)
         nodes = np.concatenate([src_ids, dst_ids, neg_ids])
         positives = np.concatenate([src_ids, dst_ids])
@@ -140,7 +129,7 @@ class TGN(torch.nn.Module):
         if self.use_memory:
             if self.memory_update_at_start:
                 # Update memory for all nodes with messages stored in previous batches
-                memory, last_update = self.get_updated_memory(list(range(self.n_nodes)), self.memory.messages)
+                memory, last_update = self._get_updated_memory(list(range(self.n_nodes)), self.memory.messages)
             else:
                 memory = self.memory.get_memory(list(range(self.n_nodes)))
                 last_update = self.memory.last_update
@@ -242,14 +231,16 @@ class TGN(torch.nn.Module):
         # Update the memory with the aggregated messages
         self._memory_updater.update_memory(unique_nodes, unique_messages, timestamps=unique_timestamps)
 
-    def get_updated_memory(self, nodes: List[int], messages: dict) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _get_updated_memory(self, nodes: List[int], messages: dict) -> Tuple[torch.Tensor, torch.Tensor]:
         # Aggregate messages for the same nodes
+        # E.g., last message / mean message
         unique_nodes, unique_messages, unique_timestamps = self._message_aggregator.aggregate(nodes, messages)
 
         if len(unique_nodes) > 0:
+            # E.g., identity / MLP
             unique_messages = self._message_function.compute_message(unique_messages)
 
-        updated_memory, updated_last_update = self._memory_updater.get_updated_memory(
+        updated_memory, updated_last_update = self._memory_updater.get_updated_memory(  # E.g., GRU / RNN
             unique_nodes, unique_messages, timestamps=unique_timestamps
         )
 
@@ -268,7 +259,7 @@ class TGN(torch.nn.Module):
         dst_memory = self.memory.get_memory(dst_ids) if not self.use_dst_emb_in_message else dst_emb
 
         source_time_delta = edge_times - self.memory.last_update[src_ids]
-        source_time_delta_encoding = self.time_encoder(source_time_delta.unsqueeze(dim=1)).view(len(src_ids), -1)
+        source_time_delta_encoding = self._time_encoder(source_time_delta.unsqueeze(dim=1)).view(len(src_ids), -1)
 
         source_message = torch.cat(
             [src_memory, dst_memory, edge_features, source_time_delta_encoding],

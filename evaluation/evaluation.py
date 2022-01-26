@@ -1,14 +1,26 @@
 import math
+from typing import Tuple
 
 import numpy as np
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
+from torch import nn
+
+from model.tgn import TGN
+from utils.data_processing import Data
+from utils.utils import RandEdgeSampler
 
 
-def eval_edge_prediction(model, negative_edge_sampler, data, n_neighbors, batch_size=200):
+def eval_edge_prediction(
+    model: TGN,
+    negative_edge_sampler: RandEdgeSampler,
+    data: Data,
+    n_neighbors: int,
+    batch_size: int = 200,
+) -> Tuple[float, float]:
     # Ensures the random sampler uses a seed for evaluation (i.e. we sample always the same
     # negatives for validation / test set)
-    assert negative_edge_sampler._seed is not None
+    assert negative_edge_sampler.seed is not None
     negative_edge_sampler.reset_random_state()
 
     val_ap, val_auc = [], []
@@ -25,17 +37,17 @@ def eval_edge_prediction(model, negative_edge_sampler, data, n_neighbors, batch_
         for k in range(num_test_batch):
             s_idx = k * TEST_BATCH_SIZE
             e_idx = min(num_test_instance, s_idx + TEST_BATCH_SIZE)
-            sources_batch = data.src_ids[s_idx:e_idx]
-            destinations_batch = data.dst_ids[s_idx:e_idx]
+            src_ids = data.src_ids[s_idx:e_idx]
+            dst_ids = data.dst_ids[s_idx:e_idx]
             timestamps_batch = data.timestamps[s_idx:e_idx]
             edge_idxes_batch = data.edge_idxes[s_idx: e_idx]
 
-            size = len(sources_batch)
-            _, negative_samples = negative_edge_sampler.sample(size)
+            size = len(src_ids)
+            _, neg_ids = negative_edge_sampler.sample(size)
 
-            pos_prob, neg_prob = model.compute_edge_probabilities(sources_batch, destinations_batch,
-                                                                  negative_samples, timestamps_batch,
-                                                                  edge_idxes_batch, n_neighbors)
+            pos_prob, neg_prob = model.compute_edge_probabilities(
+                src_ids, dst_ids, neg_ids, timestamps_batch, edge_idxes_batch, n_neighbors
+            )
 
             pred_score = np.concatenate([pos_prob.cpu().numpy(), neg_prob.cpu().numpy()])
             true_label = np.concatenate([np.ones(size), np.zeros(size)])
@@ -43,10 +55,17 @@ def eval_edge_prediction(model, negative_edge_sampler, data, n_neighbors, batch_
             val_ap.append(average_precision_score(true_label, pred_score))
             val_auc.append(roc_auc_score(true_label, pred_score))
 
-    return np.mean(val_ap), np.mean(val_auc)
+    return float(np.mean(val_ap)), float(np.mean(val_auc))
 
 
-def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):
+def eval_node_classification(
+    tgn: TGN,
+    decoder: nn.Module,
+    data: Data,
+    edge_idxes: np.ndarray,
+    batch_size: int,
+    n_neighbors: int,
+) -> float:
     pred_prob = np.zeros(len(data.src_ids))
     num_instance = len(data.src_ids)
     num_batch = math.ceil(num_instance / batch_size)
@@ -58,17 +77,14 @@ def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighb
             s_idx = k * batch_size
             e_idx = min(num_instance, s_idx + batch_size)
 
-            sources_batch = data.src_ids[s_idx: e_idx]
-            destinations_batch = data.dst_ids[s_idx: e_idx]
+            src_ids = data.src_ids[s_idx: e_idx]
+            dst_ids = data.dst_ids[s_idx: e_idx]
             timestamps_batch = data.timestamps[s_idx:e_idx]
-            edge_idxes_batch = edge_idxs[s_idx: e_idx]
+            edge_idxes_batch = edge_idxes[s_idx: e_idx]
 
-            source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,
-                                                                                         destinations_batch,
-                                                                                         destinations_batch,
-                                                                                         timestamps_batch,
-                                                                                         edge_idxes_batch,
-                                                                                         n_neighbors)
+            source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(
+                src_ids, dst_ids, dst_ids, timestamps_batch, edge_idxes_batch, n_neighbors
+            )
             pred_prob_batch = decoder(source_embedding).sigmoid()
             pred_prob[s_idx: e_idx] = pred_prob_batch.cpu().numpy()
 

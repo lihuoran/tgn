@@ -20,17 +20,19 @@ class Data:
         self.n_unique_nodes = len(self.unique_nodes)
 
 
-def get_data_node_classification(dataset_name, use_validation=False):
+def get_data_node_classification(
+    dataset_name: str, use_validation: bool = False
+) -> Tuple[Data, np.ndarray, np.ndarray, Data, Data, Data]:
     # Load data and train val test split
-    graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
-    edge_features = np.load('./data/ml_{}.npy'.format(dataset_name))
-    node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name))
+    graph_df = pd.read_csv(f'./data/ml_{dataset_name}.csv')
+    edge_features = np.load(f'./data/ml_{dataset_name}.npy')
+    node_features = np.load(f'./data/ml_{dataset_name}_node.npy')
 
     val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
 
-    sources = graph_df.u.values
-    destinations = graph_df.i.values
-    edge_idxs = graph_df.idx.values
+    src_ids = graph_df.u.values
+    dst_ids = graph_df.i.values
+    edge_idxes = graph_df.idx.values
     labels = graph_df.label.values
     timestamps = graph_df.ts.values
 
@@ -40,16 +42,19 @@ def get_data_node_classification(dataset_name, use_validation=False):
     test_mask = timestamps > test_time
     val_mask = np.logical_and(timestamps <= test_time, timestamps > val_time) if use_validation else test_mask
 
-    full_data = Data(sources, destinations, timestamps, edge_idxs, labels)
-
-    train_data = Data(sources[train_mask], destinations[train_mask], timestamps[train_mask],
-                      edge_idxs[train_mask], labels[train_mask])
-
-    val_data = Data(sources[val_mask], destinations[val_mask], timestamps[val_mask],
-                    edge_idxs[val_mask], labels[val_mask])
-
-    test_data = Data(sources[test_mask], destinations[test_mask], timestamps[test_mask],
-                     edge_idxs[test_mask], labels[test_mask])
+    full_data = Data(src_ids, dst_ids, timestamps, edge_idxes, labels)
+    train_data = Data(
+        src_ids[train_mask], dst_ids[train_mask], timestamps[train_mask],
+        edge_idxes[train_mask], labels[train_mask]
+    )
+    val_data = Data(
+        src_ids[val_mask], dst_ids[val_mask], timestamps[val_mask],
+        edge_idxes[val_mask], labels[val_mask]
+    )
+    test_data = Data(
+        src_ids[test_mask], dst_ids[test_mask], timestamps[test_mask],
+        edge_idxes[test_mask], labels[test_mask]
+    )
 
     return full_data, node_features, edge_features, train_data, val_data, test_data
 
@@ -189,7 +194,7 @@ def get_data(
 
 def compute_time_statistics(
     src_ids: np.ndarray, dst_ids: np.ndarray, timestamps: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[float, float, float, float]:
     last_ts_src = dict()
     last_ts_dst = dict()
     all_time_diffs_src = []
@@ -206,4 +211,4 @@ def compute_time_statistics(
     mean_time_shift_dst = np.mean(all_time_diffs_dst)
     std_time_shift_dst = np.std(all_time_diffs_dst)
 
-    return mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst
+    return float(mean_time_shift_src), float(std_time_shift_src), float(mean_time_shift_dst), float(std_time_shift_dst)

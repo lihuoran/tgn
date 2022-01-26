@@ -103,6 +103,10 @@ class RandEdgeSampler(object):
     def reset_random_state(self) -> None:
         self._random_state = np.random.RandomState(self._seed)
 
+    @property
+    def seed(self) -> int:
+        return self._seed
+
 
 class NeighborFinder:
     def __init__(self, adj_list: List[list], uniform: bool = False, seed: int = None) -> None:

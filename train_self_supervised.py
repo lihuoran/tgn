@@ -101,8 +101,8 @@ Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
 model_save_path = f'./saved_models/{args.prefix}-{args.data}.pth'
 
 
-def get_checkpoint_path(epoch: int) -> str:
-    return f'./saved_checkpoints/{args.prefix}-{args.data}-{epoch}.pth'
+def get_checkpoint_path(_epoch: int) -> str:
+    return f'./saved_checkpoints/{args.prefix}-{args.data}-{_epoch}.pth'
 
 
 # set up logger
